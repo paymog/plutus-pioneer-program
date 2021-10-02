@@ -15,24 +15,27 @@
 module Week03.Homework1 where
 
 import           Control.Monad        hiding (fmap)
-import           Data.Aeson           (ToJSON, FromJSON)
+import           Data.Aeson           (FromJSON, ToJSON)
 import           Data.Map             as Map
+import           Data.String
 import           Data.Text            (Text)
 import           Data.Void            (Void)
 import           GHC.Generics         (Generic)
+import           Ledger               hiding (singleton)
+import           Ledger.Ada           as Ada
+import           Ledger.Constraints   as Constraints
+import qualified Ledger.Typed.Scripts as Scripts
+import           Playground.Contract  (ToSchema, ensureKnownCurrencies,
+                                       printJson, printSchemas, stage)
+import           Playground.TH        (mkKnownCurrencies, mkSchemaDefinitions)
+import           Playground.Types     (KnownCurrency (..))
 import           Plutus.Contract
 import qualified PlutusTx
 import           PlutusTx.Prelude     hiding (unless)
-import           Ledger               hiding (singleton)
-import           Ledger.Constraints   as Constraints
-import qualified Ledger.Typed.Scripts as Scripts
-import           Ledger.Ada           as Ada
-import           Playground.Contract  (printJson, printSchemas, ensureKnownCurrencies, stage, ToSchema)
-import           Playground.TH        (mkKnownCurrencies, mkSchemaDefinitions)
-import           Playground.Types     (KnownCurrency (..))
 import           Prelude              (IO)
 import qualified Prelude              as P
 import           Text.Printf          (printf)
+
 
 data VestingDatum = VestingDatum
     { beneficiary1 :: PubKeyHash
@@ -46,7 +49,24 @@ PlutusTx.unstableMakeIsData ''VestingDatum
 -- This should validate if either beneficiary1 has signed the transaction and the current slot is before or at the deadline
 -- or if beneficiary2 has signed the transaction and the deadline has passed.
 mkValidator :: VestingDatum -> () -> ScriptContext -> Bool
-mkValidator _ _ _ = False -- FIX ME!
+mkValidator dat _ ctx
+    | beforeDeadline = traceIfFalse ("before deadline and beneficiary 1 did not sign transaction with deadline " <> fromString (P.show $ deadline dat) <>  "and range " <> fromString  (P.show $ txInfoValidRange  info))  $ signedByHash $ beneficiary1 dat
+    | afterDeadline = traceIfFalse ("after deadline and beneficiary 2 did not sign transaction with deadline " <> fromString (P.show $ deadline dat) <>  "and range " <> fromString  (P.show $ txInfoValidRange  info)) $ signedByHash $ beneficiary2 dat
+    | otherwise = traceError "transaction valid range overlaps with deadline, no operations permitted"
+    where
+        info :: TxInfo
+        info = scriptContextTxInfo ctx
+
+        signedByHash :: PubKeyHash -> Bool
+        signedByHash h = False
+        -- signedByHash h = txSignedBy info h
+
+        afterDeadline :: Bool
+        afterDeadline = contains (from $ deadline dat) $ txInfoValidRange info
+
+        beforeDeadline :: Bool
+        beforeDeadline = contains (to $ deadline dat) $ txInfoValidRange info
+
 
 data Vesting
 instance Scripts.ValidatorTypes Vesting where
@@ -132,7 +152,6 @@ endpoints = (give' `select` grab') >> endpoints
   where
     give' = endpoint @"give" >>= give
     grab' = endpoint @"grab" >>  grab
-
 mkSchemaDefinitions ''VestingSchema
 
 mkKnownCurrencies []
