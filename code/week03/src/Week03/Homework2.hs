@@ -14,29 +14,44 @@
 module Week03.Homework2 where
 
 import           Control.Monad        hiding (fmap)
-import           Data.Aeson           (ToJSON, FromJSON)
+import           Data.Aeson           (FromJSON, ToJSON)
 import           Data.Map             as Map
 import           Data.Text            (Text)
 import           Data.Void            (Void)
 import           GHC.Generics         (Generic)
-import           Plutus.Contract
-import qualified PlutusTx
-import           PlutusTx.Prelude     hiding (Semigroup(..), unless)
 import           Ledger               hiding (singleton)
+import           Ledger.Ada           as Ada
 import           Ledger.Constraints   as Constraints
 import qualified Ledger.Typed.Scripts as Scripts
-import           Ledger.Ada           as Ada
-import           Playground.Contract  (printJson, printSchemas, ensureKnownCurrencies, stage, ToSchema)
+import           Playground.Contract  (ToSchema, ensureKnownCurrencies,
+                                       printJson, printSchemas, stage)
 import           Playground.TH        (mkKnownCurrencies, mkSchemaDefinitions)
 import           Playground.Types     (KnownCurrency (..))
-import           Prelude              (IO, Semigroup (..), Show (..), String, undefined)
+import           Plutus.Contract
+import qualified PlutusTx
+import           PlutusTx.Prelude     hiding (Semigroup (..), unless)
+import           Prelude              (IO, Semigroup (..), Show (..), String,
+                                       undefined)
 import           Text.Printf          (printf)
 
 {-# OPTIONS_GHC -fno-warn-unused-imports #-}
 
 {-# INLINABLE mkValidator #-}
 mkValidator :: PubKeyHash -> POSIXTime -> () -> ScriptContext -> Bool
-mkValidator _ _ _ _ = False -- FIX ME!
+mkValidator pubHash t _ ctx = afterDeadline && signedByHash pubHash
+    -- | beforeDeadline = traceIfFalse "before deadline with incorrect hash"  $ signedByHash pubHash
+    -- | afterDeadline = traceIfFalse "after deadline with incorrect hash" $ signedByHash pubHash
+    -- | otherwise = traceError "transaction valid range overlaps with deadline, no operations permitted"
+    where
+        info :: TxInfo
+        info = scriptContextTxInfo ctx
+
+        signedByHash :: PubKeyHash -> Bool
+        signedByHash h = txSignedBy info h
+
+        afterDeadline :: Bool
+        afterDeadline = contains (from t) $ txInfoValidRange info
+
 
 data Vesting
 instance Scripts.ValidatorTypes Vesting where
@@ -44,13 +59,20 @@ instance Scripts.ValidatorTypes Vesting where
     type instance RedeemerType Vesting = ()
 
 typedValidator :: PubKeyHash -> Scripts.TypedValidator Vesting
-typedValidator = undefined -- IMPLEMENT ME!
+typedValidator p = Scripts.mkTypedValidator @Vesting
+    ($$(PlutusTx.compile [|| mkValidator ||]) `PlutusTx.applyCode` PlutusTx.liftCode p)
+    $$(PlutusTx.compile [|| wrap ||])
+  where
+    wrap = Scripts.wrapValidator @POSIXTime @()
 
 validator :: PubKeyHash -> Validator
-validator = undefined -- IMPLEMENT ME!
+validator = Scripts.validatorScript . typedValidator
+
+valHash :: PubKeyHash -> Ledger.ValidatorHash
+valHash = Scripts.validatorHash . typedValidator
 
 scrAddress :: PubKeyHash -> Ledger.Address
-scrAddress = undefined -- IMPLEMENT ME!
+scrAddress = scriptAddress . validator
 
 data GiveParams = GiveParams
     { gpBeneficiary :: !PubKeyHash
@@ -80,7 +102,7 @@ grab = do
     pkh   <- pubKeyHash <$> ownPubKey
     utxos <- Map.filter (isSuitable now) <$> utxoAt (scrAddress pkh)
     if Map.null utxos
-        then logInfo @String $ "no gifts available"
+        then logInfo @String $ "no gifts available at time " <> (show now)
         else do
             let orefs   = fst <$> Map.toList utxos
                 lookups = Constraints.unspentOutputs utxos        <>
