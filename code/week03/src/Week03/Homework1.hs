@@ -50,16 +50,16 @@ PlutusTx.unstableMakeIsData ''VestingDatum
 -- or if beneficiary2 has signed the transaction and the deadline has passed.
 mkValidator :: VestingDatum -> () -> ScriptContext -> Bool
 mkValidator dat _ ctx
-    | beforeDeadline = traceIfFalse ("before deadline and beneficiary 1 did not sign transaction with deadline " <> fromString (P.show $ deadline dat) <>  "and range " <> fromString  (P.show $ txInfoValidRange  info))  $ signedByHash $ beneficiary1 dat
-    | afterDeadline = traceIfFalse ("after deadline and beneficiary 2 did not sign transaction with deadline " <> fromString (P.show $ deadline dat) <>  "and range " <> fromString  (P.show $ txInfoValidRange  info)) $ signedByHash $ beneficiary2 dat
-    | otherwise = traceError "transaction valid range overlaps with deadline, no operations permitted"
+    | beforeDeadline = traceIfFalse "before deadline and beneficiary 1 did not sign transaction"  $ signedByHash $ beneficiary1 dat
+    | afterDeadline = traceIfFalse "after deadline and beneficiary 2 did not sign transaction" $ signedByHash $ beneficiary2 dat
+    | otherwise = trace "transaction valid range overlaps with deadline, no operations permitted" False
     where
         info :: TxInfo
         info = scriptContextTxInfo ctx
 
         signedByHash :: PubKeyHash -> Bool
-        signedByHash h = False
-        -- signedByHash h = txSignedBy info h
+        -- signedByHash h = False
+        signedByHash h = txSignedBy info h
 
         afterDeadline :: Bool
         afterDeadline = contains (from $ deadline dat) $ txInfoValidRange info
