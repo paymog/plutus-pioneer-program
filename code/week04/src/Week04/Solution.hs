@@ -7,16 +7,16 @@
 
 module Week04.Solution where
 
-import Data.Aeson             (FromJSON, ToJSON)
-import Data.Functor           (void)
-import Data.Text              (Text, unpack)
-import GHC.Generics           (Generic)
-import Ledger
-import Ledger.Ada             as Ada
-import Ledger.Constraints     as Constraints
-import Plutus.Contract        as Contract
-import Plutus.Trace.Emulator  as Emulator
-import Wallet.Emulator.Wallet
+import           Data.Aeson             (FromJSON, ToJSON)
+import           Data.Functor           (void)
+import           Data.Text              (Text, unpack)
+import           GHC.Generics           (Generic)
+import           Ledger
+import           Ledger.Ada             as Ada
+import           Ledger.Constraints     as Constraints
+import           Plutus.Contract        as Contract
+import           Plutus.Trace.Emulator  as Emulator
+import           Wallet.Emulator.Wallet
 
 data PayParams = PayParams
     { ppRecipient :: PubKeyHash
@@ -30,7 +30,7 @@ payContract = do
     pp <- endpoint @"pay"
     let tx = mustPayToPubKey (ppRecipient pp) $ lovelaceValueOf $ ppLovelace pp
     handleError (\err -> Contract.logInfo $ "caught error: " ++ unpack err) $ void $ submitTx tx
-    payContract
+    -- payContract
 
 payTrace :: Integer -> Integer -> EmulatorTrace ()
 payTrace x y = do
